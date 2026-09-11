@@ -21,7 +21,7 @@ not belong in the suite.
 ## What belongs in the core
 
 zeno is a generic substrate. A change belongs here only if it stays true to the
-model in [docs/decisions.md](docs/decisions.md):
+model in [docs/decisions.md](docs/overview/decisions.md):
 
 - **The core names no role.** No workflow, path, or application name in the
   source — including comments and examples. After a change, grep for
@@ -39,7 +39,7 @@ Anything application-specific belongs in the instance, not here.
 - Every public fn carries a docstring describing its capability, not its
   implementation.
 - New behaviour that changes the model gets an ADR in
-  [docs/decisions.md](docs/decisions.md), newest at the bottom.
+  [docs/decisions.md](docs/overview/decisions.md), newest at the bottom.
 
 ## PRs
 

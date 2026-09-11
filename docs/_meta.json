@@ -1,6 +1,6 @@
 {
   "overview": {
     "title": "Overview",
-    "pages": ["architecture", "decisions"]
+    "pages": ["index", "architecture", "decisions"]
   }
 }

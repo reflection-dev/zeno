@@ -115,8 +115,8 @@ minimal: a cheap classifier might get read-only error access; a coding agent
 gets real read/write. The invariant is that the grant is chosen per task, and
 each agent reaches it through its own MCP path.
 
-See [docs/architecture.md](docs/architecture.md) and
-[docs/decisions.md](docs/decisions.md) for the full model and the decision log.
+See [docs/architecture.md](docs/overview/architecture.md) and
+[docs/decisions.md](docs/overview/decisions.md) for the full model and the decision log.
 
 ## An instance, one loop, many roles
 

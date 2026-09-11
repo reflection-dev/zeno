@@ -1,3 +1,7 @@
+---
+title: Architecture
+---
+
 # Architecture
 
 zeno separates a **long-lived orchestrator** from **short-lived agents**. One
@@ -12,7 +16,7 @@ capability, spawn an agent, and supervise a loop. Everything specific (what the
 process does, which roles exist, what each may touch) lives in the **instance**
 and is supplied as data and code.
 
-> The design notes under [`vision/`](vision/) are the earlier, broader sketches
+> The design notes in the repo's [`docs/vision/`](https://github.com/reflection-dev/zeno/tree/master/docs/vision) are the earlier, broader sketches
 > this core was distilled from (including a wider set of speculative host
 > primitives). The shipped core is deliberately leaner than those notes; where
 > they disagree, this document and the running code win.

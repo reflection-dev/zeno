@@ -1,8 +1,12 @@
+---
+title: Decisions
+---
+
 # Decision log
 
 Chronological, ADR-style. Newest at the bottom. Each entry states the context,
 the decision, why, and consequences. Several are inherited from the earlier
-design notes under [`vision/`](vision/) and revised to match the shipped core.
+design notes in the repo's [`docs/vision/`](https://github.com/reflection-dev/zeno/tree/master/docs/vision) and revised to match the shipped core.
 
 ---
 
