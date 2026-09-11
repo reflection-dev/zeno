@@ -1,0 +1,38 @@
+name: Bug report
+description: Something in the zeno core behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For anything security-sensitive, use
+        [SECURITY.md](../blob/master/SECURITY.md) instead of a public issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal grant / spawn / loop that triggers it.
+      render: clojure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: zeno revision
+      description: The git sha or dependency revision you are on.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: Clojure / JDK versions, OS.
+    validations:
+      required: false

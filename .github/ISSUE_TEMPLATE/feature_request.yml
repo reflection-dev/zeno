@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a change to the zeno core
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The core is deliberately small — see
+        [Non-goals](../blob/master/README.md#non-goals). Application-specific
+        behaviour belongs in the instance, not here.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What does the substrate make hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should change, and why does it belong in the core rather than an instance?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
