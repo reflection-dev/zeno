@@ -1,10 +1,10 @@
-(ns zeno.image
-  "Zeno core — the living image + MCP gateway.
+(ns zeno.gateway
+  "Zeno core — the always-on process + MCP gateway.
 
   One long-lived process that exposes the capability grant to spawned agents over
   HTTP MCP (`/mcp/<role>`, a single `eval` tool). The domain supplies `roles`: a
   map of role-keyword -> (fn [] grant-spec), rebuilt per request from current
-  config/code so live edits take effect without a restart. The image holds the
+  config/code so live edits take effect without a restart. The gateway holds the
   secrets and privilege; spawned sessions see only the gateway URL."
   (:require [clojure.data.json :as json]
             [clojure.string :as str]

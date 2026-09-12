@@ -25,7 +25,7 @@ when the task ends.
 ## Contents
 
 - [Why](#why)
-- [The four primitives](#the-four-primitives)
+- [The core primitives](#the-core-primitives)
 - [Quick start](#quick-start)
 - [The boundaries](#the-boundaries)
 - [An instance, one loop, many roles](#an-instance-one-loop-many-roles)
@@ -47,14 +47,16 @@ communication and process logic; the actual work runs in ephemeral agents, each
 with a grant scoped to just that task. The process itself is deterministic;
 where no deterministic practice exists yet, it calls an LLM or an agent.
 
-## The four primitives
+## The core primitives
 
 | ns | what it is |
 | --- | --- |
-| **`zeno.image`** | the always-on process + MCP gateway. Holds the secrets and privilege; serves each role at `/mcp/<role>`, rebuilt per request from current code/config so live edits take effect without a restart. Spawned agents see only the gateway URL. |
+| **`zeno.gateway`** | the always-on process + MCP gateway. Holds the secrets and privilege; serves each role at `/mcp/<role>`, rebuilt per request from current code/config so live edits take effect without a restart. Spawned agents see only the gateway URL. |
 | **`zeno.grant`** | the capability boundary. A deny-by-default SCI context exposing *exactly* the vocabulary the orchestrator injects (`:vocab`) plus `(context)`/`(tools)`; an agent's `(eval ...)` can reach nothing else — no fs, no shell, no network, except through granted fns. |
 | **`zeno.spawn`** | one ephemeral agent = one task. Launches an external coding-agent CLI pointed at exactly one role's MCP, waits, and tears it down. The session holds no secrets — only the gateway URL. |
 | **`zeno.loop`** | a supervised step loop. Steps are plain `[label fn]` pairs, redefinable live; a crashing step is isolated (logged, skipped) so one bad step never kills the process. |
+| **`zeno.sandbox`** | the agent body in a sandbox. Boots an ephemeral msb microVM with an immutable image, a persistent per-agent volume (session + repo checkouts + scratch), the env the instance forwards, and a lifetime cap; `run` is generic (any argv, optional stdin), `omp` wraps the coding agent (task piped in, answer parsed out). msb backend now, Kubernetes pods later. |
+| **`zeno.oci`** | an agent image from a Clojure spec. Realises package store paths via nix (`nixpkgs#git`, `github:…#omp`) and their closure, then assembles the OCI archive directly — no nix expressions, no dockerTools; the environment is data, nix is just the package source. |
 
 ## Quick start
 
@@ -67,11 +69,11 @@ zeno is a library. Add it to an instance's `deps.edn`:
 ;;                                        :git/sha "..."}}}
 ```
 
-A minimal orchestrator: author a role's grant, start the image, spawn an agent
+A minimal orchestrator: author a role's grant, start the gateway, spawn an agent
 against it, and drive a supervised loop.
 
 ```clojure
-(require '[zeno.image :as image]
+(require '[zeno.gateway :as gateway]
          '[zeno.grant :as grant]
          '[zeno.spawn :as spawn]
          '[zeno.loop  :as zloop])
@@ -84,8 +86,8 @@ against it, and drive a supervised loop.
               "note"      "(note msg) - record a note"}
    :ctx-info {:role "worker"}})
 
-;; Start the always-on image; each role is served at /mcp/<role>.
-(def img (image/start! {:port 7777 :roles {:worker worker-grant}}))
+;; Start the always-on gateway; each role is served at /mcp/<role>.
+(def img (gateway/start! {:port 7777 :roles {:worker worker-grant}}))
 
 ;; Spawn an ephemeral agent whose ONLY tool is (eval ...) against that grant.
 (spawn/spawn {:gateway-url (:gateway-url img)
@@ -128,9 +130,10 @@ trust domain, not running more loops inside one process.
 
 ## Non-goals
 
-- **Not a sandbox or VM manager.** Agents spawn either in their own environment
-  or right next to the orchestrator; hardware/OS isolation (microVM, Kubernetes
-  pods) is the instance's concern, layered on later.
+- **Not a VM/pod fabric.** The core *does* launch each agent in a sandbox
+  (`zeno.sandbox` — an msb microVM today, Kubernetes pods later) with declared
+  constraints, but it does not run the cluster or the hypervisor: the instance
+  supplies the profile (image, egress, secrets, limits) and the runtime hosts it.
 - **Not an application.** Reply routing, knowledge bases, feeds, publishing —
   the specific work — live in the instance (for example
   [meno](https://github.com/sm-th/meno), an auto-researcher), never in the core.

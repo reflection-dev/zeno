@@ -184,3 +184,82 @@ battle-tested code disagree, the code wins and the docs are updated to match.
 working instance, not by implementing a speculative design. Notes that never
 shipped (a wider host-primitive set, a fixed plan/act/observe template loop) are
 history, not spec.
+
+---
+
+## ADR-0012 — Sandbox orchestration is a core capability (supersedes ADR-0009's "deferred")
+
+**Context.** ADR-0009 left agent isolation to the instance and deferred it. In
+practice every instance needs to run an agent in a sandbox with declared
+constraints (image, egress, secrets, lifetime), so leaving it out pushed the
+same plumbing into each instance.
+
+**Decision.** The core owns *how* to launch an agent body in a sandbox.
+`zeno.sandbox` runs an ephemeral body in a microsandbox (msb) microVM today; a
+Kubernetes-pod backend lands later. Core is the launch mechanism and the
+constraint vocabulary (image, volume, env, egress, network-bound secrets,
+resource limits, TTL); the instance supplies the *profile* — the concrete
+values for a role.
+
+**Why.** "Run an agent in a described box" is universal, and the constraint spec
+is a portable contract while the backend (msb → k8s) evolves under it.
+
+**Consequences.** The core carries an msb dependency at that seam; the spec is
+one auditable place. The core still names no role (ADR-0002): a profile is data
+the instance hands in. This supersedes ADR-0009's "deferred, not mandated".
+
+---
+
+## ADR-0013 — An agent's environment is described in Clojure and built without dockerTools
+
+**Decision.** An agent image is a Clojure spec — `{:packages :env :cmd :workdir}`
+— not a hand-written nix file. `zeno.oci` uses nix only to realise package store
+paths (`nixpkgs#git`, `github:…#omp`) and their closure, then assembles the OCI
+(docker-save) archive directly and loads it into the sandbox runtime. No nix is
+generated from strings and none is authored per image.
+
+**Why.** No mature Clojure→Nix DSL exists, and string-generating nix is fragile.
+Describing the environment as data keeps it alongside the rest of the
+orchestration; nix stays an implementation detail (a package source), and image
+correctness (store closure + symlink farm + archive format) is small and owned.
+
+**Consequences.** Building a linux image on macOS needs a linux builder for
+packages the caches don't serve; cached packages substitute with none. A package
+is a nixpkgs attr name or a full flake installable.
+
+---
+
+## ADR-0014 — The agent body is disposable; durable state lives in a per-agent volume
+
+**Decision.** The sandbox body is ephemeral — it boots (sub-second), does one
+run, and is destroyed. Anything that must survive lives in a named, persistent
+volume mounted at the working dir: the agent's session, its repo checkouts and
+branch work, its scratch. The image is immutable infra; the volume is the
+mutable per-agent home. The instance decides the volume key (per agent, per
+topic — its choice).
+
+**Why.** Disposable bodies keep isolation cheap and idempotent (ADR-0004); a
+persistent home lets sessions resume and repos persist across bodies without
+keeping a VM warm. The volume *is* the diff over the immutable image.
+
+**Consequences.** One live body per volume at a time (a conversation is
+sequential); parallelism is a second agent/volume. The volume is a host dir now,
+a PVC (or object-store-backed) later.
+
+---
+
+## ADR-0015 — Secrets are resolved by the instance and forwarded as named env
+
+**Decision.** The core launcher forwards to a sandbox only the env it is handed.
+An agent declares the secrets it needs *by name*; the instance resolves the
+values from its own store (e.g. secretspec) and passes them as env. An agent
+gets only its declared secrets — an orchestrator-held token it did not name never
+enters its box.
+
+**Why.** Selective forwarding is the capability boundary for secrets: a
+prompt-injected body cannot exfiltrate what was never put in it. Resolution is
+instance policy (which store); forwarding is the core mechanism.
+
+**Consequences.** Values pass as plain env today; network-bound secrets (msb
+`--secret-conf`, delivered only toward allowed hosts, never on VM disk) are the
+hardening step, using the same `{:env :hosts}` declaration.

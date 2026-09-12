@@ -21,16 +21,18 @@ and is supplied as data and code.
 > primitives). The shipped core is deliberately leaner than those notes; where
 > they disagree, this document and the running code win.
 
-## The four primitives
+## The core primitives
 
-The whole core is four small namespaces.
+The core is a handful of small namespaces, split into an **orchestrator seam**
+(the always-on side) and an **agent-body seam** (how a spawned agent is built
+and run).
 
-### `zeno.image` — the always-on process + MCP gateway
+### `zeno.gateway` — the always-on process + MCP gateway
 
 One long-lived HTTP server. The instance supplies `:roles`, a map of
 role-keyword to a zero-arg fn returning that role's grant-spec, rebuilt per
 request from current config/code so live edits take effect without a restart.
-Each role is served at `/mcp/<role>`. The image holds the secrets and privilege;
+Each role is served at `/mcp/<role>`. The gateway holds the secrets and privilege;
 a spawned agent sees only the gateway URL.
 
 ### `zeno.grant` — the capability boundary
@@ -56,6 +58,23 @@ A loop is an ordered seq of `[label step-fn]`; each step takes the context map
 and returns it. Steps are plain fns, redefinable live in the image. A crashing
 step is isolated (logged, skipped) and the context passes through, so one bad
 step never kills the process.
+
+### `zeno.sandbox` — the agent body in a microsandbox
+
+Launches an ephemeral body in an msb microVM: an immutable image, a persistent
+named volume mounted at the working dir (the agent's durable home — session,
+repo checkouts, scratch), the env the instance forwards, and a lifetime cap. The
+body boots sub-second, does one run, and is destroyed; state survives in the
+volume, not the body. `run` is the generic primitive (any argv, optional stdin);
+`omp` wraps the coding agent (task piped in, headless, answer parsed from its
+JSON stream). msb is the backend today; a Kubernetes-pod backend lands later.
+
+### `zeno.oci` — an agent image from a Clojure spec
+
+Turns a Clojure `{:packages :env :cmd :workdir}` spec into an OCI image, using
+nix only to realise package store paths and their closure, then assembling the
+docker-save archive directly and loading it into the sandbox. No nix expressions
+and no dockerTools — the environment is data, nix is just the package source.
 
 ## Two evaluators, opposite trust
 
@@ -112,6 +131,9 @@ Long-lived work keeps its state of record **outside** the volatile image; the
 image is a working context, not the source of truth, and the loop is idempotent
 so a restart resumes rather than repeats.
 
-Isolation of a spawned agent — its own microVM, a Kubernetes pod, or simply
-running next to the orchestrator — is the **instance's** concern, layered on
-depending on scale. The core does not mandate a sandbox.
+The core also owns *how* a spawned agent is isolated: `zeno.sandbox` runs each
+body in an msb microVM (a Kubernetes-pod backend later) with a declared image,
+egress allowlist, forwarded secrets and a lifetime cap. The body is disposable;
+its durable state lives in a persistent per-agent volume. What the instance
+supplies is the *profile* — the concrete constraints for a role — not the
+mechanism (see ADR-0012, ADR-0014).

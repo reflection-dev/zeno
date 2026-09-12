@@ -18,9 +18,9 @@ config change restarts them and cuts off parallel sessions. zeno pulls the
 orchestrator into its own layer and boxes each unit of work in a scoped,
 ephemeral agent.
 
-## The four primitives
+## The core primitives
 
-- **`zeno.image`** — the always-on process and MCP gateway; holds the secrets,
+- **`zeno.gateway`** — the always-on process and MCP gateway; holds the secrets,
   serves each role at `/mcp/<role>`.
 - **`zeno.grant`** — the capability boundary; a deny-by-default SCI context
   exposing exactly the vocabulary the orchestrator injects.
@@ -28,6 +28,10 @@ ephemeral agent.
   MCP, torn down on exit.
 - **`zeno.loop`** — a supervised step loop where one crashing step never kills
   the process.
+- **`zeno.sandbox`** — the agent body in an msb microVM (Kubernetes pods later):
+  an immutable image, a persistent per-agent volume, forwarded env, a lifetime cap.
+- **`zeno.oci`** — an agent image from a Clojure spec, built via nix store paths
+  without nix expressions or dockerTools.
 
 Read on: [Architecture](architecture.md) walks through the model and the
 boundaries; [Decisions](decisions.md) is the ADR log of why it is shaped this

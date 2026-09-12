@@ -27,7 +27,7 @@ it the orchestrator's power. Two boundaries carry that weight:
   orchestrator injected. There is no fs, shell, or network reach except through
   a granted fn. Widening what an agent can reach without the orchestrator
   authoring it is a security bug.
-- **The gateway (`zeno.image`).** The image holds the secrets and privilege;
+- **The gateway (`zeno.gateway`).** The gateway holds the secrets and privilege;
   spawned agents receive only a gateway URL scoped to one role's path
   (`/mcp/<role>`). A spawned session must never see the secrets themselves, and
   one role's endpoint must not reach another role's grant.
