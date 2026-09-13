@@ -32,6 +32,22 @@ ephemeral agent.
   an immutable image, a persistent per-agent volume, forwarded env, a lifetime cap.
 - **`zeno.oci`** — an agent image from a Clojure spec, built via nix store paths
   without nix expressions or dockerTools.
+- **`zeno.main`** — the launcher; composes the classpath and loads the config's
+  `init.clj` at `$ZENO_HOME` (default `~/.zeno`), the way emacs loads
+  `~/.emacs.d/init.el`.
+
+## Running a config
+
+zeno is both a library and a runnable launcher. `nix run
+github:reflection-dev/zeno` loads a local config at `~/.zeno` (override with
+`ZENO_HOME`). The Emacs model: zeno is the binary/core, `~/.zeno` is the config
+(a `deps.edn` project with an `init.clj`, published as `<name>.zeno` dotfiles),
+and machines are packages resolved ELPA-style on first run. The flake app
+composes the classpath at launch — zeno core plus the config project, both as
+`:local/root` — then `zeno.main` sets the `zeno.home` system property and
+`load-file`s `init.clj`, which wires the instance. Config is read from local
+disk, so config edits take effect on the next run without a push.
+
 
 Read on: [Architecture](architecture.md) walks through the model and the
 boundaries; [Decisions](decisions.md) is the ADR log of why it is shaped this

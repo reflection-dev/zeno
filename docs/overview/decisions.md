@@ -263,3 +263,36 @@ instance policy (which store); forwarding is the core mechanism.
 **Consequences.** Values pass as plain env today; network-bound secrets (msb
 `--secret-conf`, delivered only toward allowed hosts, never on VM disk) are the
 hardening step, using the same `{:env :hosts}` declaration.
+
+---
+
+## ADR-0016 — The config lives in `~/.zeno` and is loaded ELPA-style by a `nix run` launcher (Emacs model)
+
+**Context.** zeno started as a library an instance embedded in its own
+`deps.edn`. But every instance repeated the same wiring — compose a classpath,
+find the entrypoint, run it — and there was no single "run my instance" command.
+The mental model that fits is Emacs: an executable that, on launch, loads a
+user config from a well-known directory.
+
+**Decision.** zeno is also a runnable launcher. `nix run
+github:reflection-dev/zeno` loads a config from `$ZENO_HOME` (default `~/.zeno`),
+the way emacs loads `~/.emacs.d/init.el`. The config is an ordinary `deps.edn`
+project with an `init.clj` entrypoint, published as `<name>.zeno` dotfiles; its
+`:paths` hold the instance's namespaces and its `:deps` pull in the machines it
+uses, resolved ELPA-style into `~/.m2`/`~/.gitlibs` on first run. `zeno.main`
+resolves the config dir, publishes it as the `zeno.home` system property, and
+`load-file`s `<home>/init.clj`.
+
+**Why.** It gives instances one command to run and a conventional home, without
+the core learning any instance detail (ADR-0002 holds — the config is data and
+code the launcher loads, not something the core names). Local-disk config means
+editing `init.clj` or a machine and re-running takes effect immediately; only
+zeno-core changes need a push or a pinned git dep.
+
+**Consequences.** The classpath is composed **at launch** by the flake app —
+zeno core as a `:local/root` self plus the config project at `~/.zeno` as a
+`:local/root`, so `init.clj` can `require` both zeno's namespaces and the
+config's own before `zeno.main` runs. This is deliberately not runtime
+`add-libs`, which is REPL-only and unsuited to composing an application classpath
+at startup. zeno keeps its library face too: a project may still embed the core
+directly via `deps.edn`.

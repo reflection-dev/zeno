@@ -26,6 +26,7 @@ when the task ends.
 
 - [Why](#why)
 - [The core primitives](#the-core-primitives)
+- [Run an instance](#run-an-instance)
 - [Quick start](#quick-start)
 - [The boundaries](#the-boundaries)
 - [An instance, one loop, many roles](#an-instance-one-loop-many-roles)
@@ -57,10 +58,43 @@ where no deterministic practice exists yet, it calls an LLM or an agent.
 | **`zeno.loop`** | a supervised step loop. Steps are plain `[label fn]` pairs, redefinable live; a crashing step is isolated (logged, skipped) so one bad step never kills the process. |
 | **`zeno.sandbox`** | the agent body in a sandbox. Boots an ephemeral msb microVM with an immutable image, a persistent per-agent volume (session + repo checkouts + scratch), the env the instance forwards, and a lifetime cap; `run` is generic (any argv, optional stdin), `omp` wraps the coding agent (task piped in, answer parsed out). msb backend now, Kubernetes pods later. |
 | **`zeno.oci`** | an agent image from a Clojure spec. Realises package store paths via nix (`nixpkgs#git`, `github:…#omp`) and their closure, then assembles the OCI archive directly — no nix expressions, no dockerTools; the environment is data, nix is just the package source. |
+| **`zeno.main`** | the launcher. `nix run` composes the classpath (zeno core + your config as `:local/root`s), then `zeno.main` resolves the config dir (`$ZENO_HOME`, else `~/.zeno`), publishes it as the `zeno.home` system property, and `load-file`s `<home>/init.clj` — the way emacs loads `~/.emacs.d/init.el`. |
+
+## Run an instance
+
+zeno is both a library and a runnable launcher. Think of it the way Emacs is
+laid out: **zeno** is the binary/core (the `emacs` executable), **`~/.zeno`** is
+your config (`~/.emacs.d`), and **machines** are reusable workflow packages
+(ELPA packages) resolved on first run.
+
+```
+nix run github:reflection-dev/zeno          # loads ~/.zeno
+ZENO_HOME=~/work/acme.zeno \
+  nix run github:reflection-dev/zeno        # load a config elsewhere
+```
+
+Your config is an ordinary `deps.edn` project with an `init.clj` entrypoint,
+published as `<name>.zeno` dotfiles (e.g. `acme.zeno`). Its `:paths` hold the
+instance's own namespaces and its `:deps` pull in the machines it uses; on first
+run those resolve ELPA-style into `~/.m2`/`~/.gitlibs`. `init.clj` wires the
+instance — provisions identities, delivers accesses, builds the machines, and
+runs the loop.
+
+The flake's `zeno`/`default` app composes the classpath at launch: zeno core as
+a `:local/root` self **plus** the config project at `~/.zeno` as a
+`:local/root`. That is why `init.clj` can `require` both zeno's namespaces and
+the config's own — everything is on one classpath before `zeno.main` runs.
+`zeno.main` then resolves the config dir (`$ZENO_HOME`, else `~/.zeno`), sets the
+`zeno.home` system property so init code can find its files regardless of the
+working directory, and `load-file`s `<home>/init.clj`.
+
+Config lives on local disk and is read from there, so editing `init.clj` or a
+machine and re-running takes effect immediately — no push needed. Only changes to
+zeno core itself need a push (or a pinned git dep).
 
 ## Quick start
 
-zeno is a library. Add it to an instance's `deps.edn`:
+zeno is also a library you can embed directly. Add it to a project's `deps.edn`:
 
 ```clojure
 {:deps {io.github.reflection-dev/zeno {:local/root "../zeno"}}}

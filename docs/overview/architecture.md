@@ -76,6 +76,22 @@ nix only to realise package store paths and their closure, then assembling the
 docker-save archive directly and loading it into the sandbox. No nix expressions
 and no dockerTools — the environment is data, nix is just the package source.
 
+### `zeno.main` — the launcher
+
+zeno is both a library and a runnable launcher. `nix run
+github:reflection-dev/zeno` loads a local config the way emacs loads
+`~/.emacs.d/init.el`: zeno is the binary/core, the config at `~/.zeno` is a
+`deps.edn` project with an `init.clj` (published as `<name>.zeno` dotfiles), and
+machines are packages resolved ELPA-style on first run. The flake's `zeno`/`default`
+app composes the classpath at launch — zeno core as a `:local/root` self **plus**
+the config project as a `:local/root`, bringing its `:paths` and machine `:deps`
+onto one classpath — then runs `zeno.main`. `zeno.main` resolves the config dir
+(`$ZENO_HOME`, else `~/.zeno`), publishes it as the `zeno.home` system property
+so init code can find its files regardless of the working directory, and
+`load-file`s `<home>/init.clj`, which requires both zeno's namespaces and the
+config's own to wire the instance. Config is read from local disk, so config
+edits take effect on the next run without a push; only zeno-core changes need one.
+
 ## Two evaluators, opposite trust
 
 - **The orchestrator** runs as full Clojure on the JVM. It is trusted — the
