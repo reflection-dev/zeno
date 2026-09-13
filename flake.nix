@@ -16,5 +16,17 @@
           packages = [ pkgs.clojure pkgs.jdk pkgs.rlwrap ];
         };
       });
+
+      apps = forAll (pkgs:
+        let
+          zeno = pkgs.writeShellScriptBin "zeno" ''
+            export PATH=${pkgs.jdk}/bin:${pkgs.clojure}/bin:$PATH
+            CFG="$ZENO_HOME"
+            if [ -z "$CFG" ]; then CFG="$HOME/.zeno"; fi
+            DEPS="{:deps {io.github.reflection-dev/zeno {:local/root \"${self}\"} zeno/config {:local/root \"$CFG\"}}}"
+            exec clojure -Sdeps "$DEPS" -M -m zeno.main "$@"
+          '';
+          app = { type = "app"; program = "${zeno}/bin/zeno"; };
+        in { zeno = app; default = app; });
     };
 }
