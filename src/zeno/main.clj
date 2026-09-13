@@ -67,5 +67,6 @@
       (do (start-nrepl! home)
           (println "zeno: daemon up — connect via nREPL; Ctrl-C to stop")
           @(promise))                       ; stay alive
-      (do (println "zeno: REPL — config at" home "(sys prop zeno.home). ^D to exit.")
+      (do (start-nrepl! home)
+          (println "zeno: REPL — config at" home "(sys prop zeno.home). ^D to exit.")
           (main/repl :init #(in-ns 'user))))))
