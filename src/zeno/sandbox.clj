@@ -36,21 +36,48 @@
   "Launch one ephemeral sandbox, run argv (optionally feeding :in on stdin),
    block until it exits (or --timeout), and return {:exit :out :err}.
 
-     :image :volume :workdir :env :timeout :cpus :memory :name :argv
-     :in    string written to the msb command's stdin (then EOF)"
-  [{:keys [image volume workdir env timeout cpus memory name argv in]
+     :image :volume :workdir :timeout :cpus :memory :name :argv
+     :env        {K V}         plain, guest-visible env (-e K=V)
+     :mounts     [{:src :dst :ro}]  extra host mounts (besides :volume)
+     :net-bound  [{:env :host}] network-bound secret refs (--secret ENV@HOST);
+                 the VALUE is read from THIS launcher's env at start, never
+                 inlined into the guest/config, and released only toward :host
+     :secret-env {ENV VAL}      secret VALUES exposed to msb via this launcher's
+                 env so --secret can read them — NOT passed into the guest (-e)
+     :egress     {:default \"deny\" :allow [host|\"public\" ...]}  egress allowlist
+     :secret-scope  action on a secret sent to a disallowed host (default block)
+     :in         string written to the msb command's stdin (then EOF)"
+  [{:keys [image volume workdir env mounts net-bound secret-env egress
+           secret-scope timeout cpus memory name argv in]
     :or   {workdir "/work"}}]
-  (let [nm   (or name (str "agent-" (System/currentTimeMillis)))
-        args (concat [msb "run" "--replace" "-q" "-n" nm]
-                     (when volume ["-v" (str volume ":" workdir)])
-                     ["-w" workdir]
-                     (env-args env)
-                     (when timeout ["--timeout" timeout])
-                     (when cpus ["-c" (str cpus)])
-                     (when memory ["-m" memory])
-                     [image "--"]
-                     argv)]
-    (apply sh/sh (concat args (when in [:in in])))))
+  (let [nm     (or name (str "agent-" (System/currentTimeMillis)))
+        expand (fn [p] (str/replace (str p) #"^~" (System/getProperty "user.home")))
+        args   (concat [msb "run" "--replace" "-q" "-n" nm]
+                       (when volume ["-v" (str volume ":" workdir)])
+                       (mapcat (fn [{:keys [src dst ro]}]
+                                 ["-v" (str (expand src) ":" dst (when ro ":ro"))])
+                               mounts)
+                       ["-w" workdir]
+                       (env-args env)
+                       (mapcat (fn [{:keys [env host]}] ["--secret" (str env "@" host)])
+                               net-bound)
+                       (when egress
+                         (if-let [prof (:net egress)]
+                           ["--net" prof]
+                           (concat ["--net-default-egress" (or (:default egress) "deny")]
+                                   (mapcat (fn [h] ["--net-rule" (str "allow@" h)])
+                                           (:allow egress)))))
+                       (when secret-scope ["--secret-scope" secret-scope])
+                       (when timeout ["--timeout" timeout])
+                       (when cpus ["-c" (str cpus)])
+                       (when memory ["-m" (str memory)])
+                       [image "--"]
+                       argv)
+        proc-env (when (seq secret-env)
+                   (merge (into {} (System/getenv)) secret-env))]
+    (apply sh/sh (concat args
+                         (when proc-env [:env proc-env])
+                         (when in [:in in])))))
 
 (defn- omp-answer
   "Extract the assistant's text from omp's --mode=json (NDJSON) output."
@@ -78,14 +105,15 @@
 (defn omp
   "Run omp headless in a sandbox and return the answer. Returns the `run` result
    plus :answer (the assistant text).
-     :image :volume :name :timeout :env  — sandbox (see `run`)
-     :model  omp model — MUST be an anthropic model to route via a Manifest
-             ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY in :env (default
-             \"anthropic/claude-opus-4-8\"; `auto` picks openrouter and ignores it)
+     sandbox keys — :image :volume :name :timeout :env :mounts :net-bound
+                    :secret-env :egress :secret-scope  (see `run`)
+     :model  omp model — routed by whatever provider creds land in the guest env
+             (default \"anthropic/claude-opus-4-8\")
      :task   the prompt string"
   [{:keys [model task env] :or {model "anthropic/claude-opus-4-8"} :as opts}]
   (let [r (run (merge {:timeout "5m"}
-                      (select-keys opts [:image :volume :name :timeout])
+                      (select-keys opts [:image :volume :name :timeout :mounts
+                                         :net-bound :secret-env :egress :secret-scope])
                       {:env  (assoc env "OMP_TASK" (str task) "OMP_MODEL" model)
                        :argv omp-argv}))]
     (assoc r :answer (omp-answer (:out r)))))
