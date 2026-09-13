@@ -52,12 +52,21 @@ holds no secrets — only the gateway URL — and is gone when the task ends. An
 optional advisor overlay attaches a reviewer as a quality gate without mutating
 the operator's global agent config.
 
-### `zeno.loop` — the supervised step loop
+### `zeno.loop` — the supervised loop and scheduler
 
-A loop is an ordered seq of `[label step-fn]`; each step takes the context map
-and returns it. Steps are plain fns, redefinable live in the image. A crashing
-step is isolated (logged, skipped) and the context passes through, so one bad
-step never kills the process.
+A step loop is an ordered seq of `[label step-fn]`; each step takes the context
+map and returns it. Steps are plain fns, redefinable live in the image. `tick`
+runs one pass; a crashing step is isolated (logged, skipped) and the context
+passes through, so one bad step never kills the process.
+
+On top of that sits a background scheduler. `every` registers (or replaces) a
+recurring process — a name, an interval, and a zero-arg fn — and `start!` runs a
+daemon-thread scheduler that ticks the due processes on their intervals,
+supervised, so a throwing process is logged and the others keep running. The
+engine owns this loop and daemon: `zeno.main` calls `start!`, so an instance's
+registered processes run in both interactive and `--daemon` modes. An `init.clj`
+only calls `every` to declare what to run — it never spawns threads or writes its
+own loop.
 
 ### `zeno.sandbox` — the agent body in a microsandbox
 
@@ -78,19 +87,28 @@ and no dockerTools — the environment is data, nix is just the package source.
 
 ### `zeno.main` — the launcher
 
-zeno is both a library and a runnable launcher. `nix run
-github:reflection-dev/zeno` loads a local config the way emacs loads
-`~/.emacs.d/init.el`: zeno is the binary/core, the config at `~/.zeno` is a
-`deps.edn` project with an `init.clj` (published as `<name>.zeno` dotfiles), and
-machines are packages resolved ELPA-style on first run. The flake's `zeno`/`default`
-app composes the classpath at launch — zeno core as a `:local/root` self **plus**
-the config project as a `:local/root`, bringing its `:paths` and machine `:deps`
-onto one classpath — then runs `zeno.main`. `zeno.main` resolves the config dir
-(`$ZENO_HOME`, else `~/.zeno`), publishes it as the `zeno.home` system property
-so init code can find its files regardless of the working directory, and
-`load-file`s `<home>/init.clj`, which requires both zeno's namespaces and the
-config's own to wire the instance. Config is read from local disk, so config
-edits take effect on the next run without a push; only zeno-core changes need one.
+zeno is both a library and a runnable launcher. It is a **runtime** that loads
+your **config** — the way a shell sources your rc or a runtime loads your
+program. `nix run github:reflection-dev/zeno` loads a local config: zeno is the
+runtime/core, the config at `~/.zeno` is a `deps.edn` project with an `init.clj`
+(published like dotfiles as `<name>.zeno`), and machines are workflow packages
+resolved on first run. The flake's `zeno`/`default` app composes the classpath at
+launch — zeno core as a `:local/root` self **plus** the config project as a
+`:local/root`, bringing its `:paths` and machine `:deps` onto one classpath —
+then runs `zeno.main`. `zeno.main` resolves the config dir (`$ZENO_HOME`, else
+`~/.zeno`), publishes it as the `zeno.home` system property so init code can find
+its files regardless of the working directory, and `load-file`s `<home>/init.clj`,
+which requires both zeno's namespaces and the config's own to wire the instance.
+Config is read from local disk, so config edits take effect on the next run
+without a push; only zeno-core changes need one.
+
+zeno **always starts**. A missing config or an `init.clj` that throws is reported
+and you still land in a working REPL, rather than the launcher refusing to boot.
+The default mode is that interactive REPL, with an nREPL server started alongside
+(its port written to `<home>/.nrepl-port`) so a client can connect while you
+type. `--daemon` runs headless: no interactive REPL, just the nREPL server
+staying up for an editor/client to connect to later. In both modes `zeno.main`
+calls `zeno.loop/start!`, so the instance's registered processes run either way.
 
 ## Two evaluators, opposite trust
 

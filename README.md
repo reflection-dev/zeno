@@ -55,17 +55,18 @@ where no deterministic practice exists yet, it calls an LLM or an agent.
 | **`zeno.gateway`** | the always-on process + MCP gateway. Holds the secrets and privilege; serves each role at `/mcp/<role>`, rebuilt per request from current code/config so live edits take effect without a restart. Spawned agents see only the gateway URL. |
 | **`zeno.grant`** | the capability boundary. A deny-by-default SCI context exposing *exactly* the vocabulary the orchestrator injects (`:vocab`) plus `(context)`/`(tools)`; an agent's `(eval ...)` can reach nothing else — no fs, no shell, no network, except through granted fns. |
 | **`zeno.spawn`** | one ephemeral agent = one task. Launches an external coding-agent CLI pointed at exactly one role's MCP, waits, and tears it down. The session holds no secrets — only the gateway URL. |
-| **`zeno.loop`** | a supervised step loop. Steps are plain `[label fn]` pairs, redefinable live; a crashing step is isolated (logged, skipped) so one bad step never kills the process. |
+| **`zeno.loop`** | the supervised loop + scheduler. A step loop is plain `[label fn]` pairs, redefinable live; `tick` runs one pass and a crashing step is isolated (logged, skipped) so one bad step never kills the process. `every` registers a recurring process and `start!` runs a background daemon-thread scheduler that ticks them, supervised. |
 | **`zeno.sandbox`** | the agent body in a sandbox. Boots an ephemeral msb microVM with an immutable image, a persistent per-agent volume (session + repo checkouts + scratch), the env the instance forwards, and a lifetime cap; `run` is generic (any argv, optional stdin), `omp` wraps the coding agent (task piped in, answer parsed out). msb backend now, Kubernetes pods later. |
 | **`zeno.oci`** | an agent image from a Clojure spec. Realises package store paths via nix (`nixpkgs#git`, `github:…#omp`) and their closure, then assembles the OCI archive directly — no nix expressions, no dockerTools; the environment is data, nix is just the package source. |
-| **`zeno.main`** | the launcher. `nix run` composes the classpath (zeno core + your config as `:local/root`s), then `zeno.main` resolves the config dir (`$ZENO_HOME`, else `~/.zeno`), publishes it as the `zeno.home` system property, and `load-file`s `<home>/init.clj` — the way emacs loads `~/.emacs.d/init.el`. |
+| **`zeno.main`** | the launcher. `nix run` composes the classpath (zeno core + your config as `:local/root`s), then `zeno.main` resolves the config dir (`$ZENO_HOME`, else `~/.zeno`), publishes it as the `zeno.home` system property, and `load-file`s `<home>/init.clj`. zeno always starts — a missing or throwing config is reported and you still land in a working REPL. Default mode is an interactive REPL; `--daemon` runs headless with an nREPL to connect to. It calls `zeno.loop/start!` so registered processes run in both modes. |
 
 ## Run an instance
 
-zeno is both a library and a runnable launcher. Think of it the way Emacs is
-laid out: **zeno** is the binary/core (the `emacs` executable), **`~/.zeno`** is
-your config (`~/.emacs.d`), and **machines** are reusable workflow packages
-(ELPA packages) resolved on first run.
+zeno is a **runtime**; your instance is a **config** it loads and runs. The
+split is the everyday one — a shell sources your rc, a browser loads your
+profile, a runtime loads your program: **zeno** is the runtime, **`$ZENO_HOME`**
+(default `~/.zeno`) is the config it loads, and **machines** are reusable
+workflow packages it pulls in on first run.
 
 ```
 nix run github:reflection-dev/zeno          # loads ~/.zeno
@@ -74,14 +75,14 @@ ZENO_HOME=~/work/acme.zeno \
 ```
 
 Your config is an ordinary `deps.edn` project with an `init.clj` entrypoint,
-published as `<name>.zeno` dotfiles (e.g. `acme.zeno`). Its `:paths` hold the
-instance's own namespaces and its `:deps` pull in the machines it uses; on first
-run those resolve ELPA-style into `~/.m2`/`~/.gitlibs`. `init.clj` wires the
+published like dotfiles as `<name>.zeno` (e.g. `acme.zeno`). Its `:paths` hold
+the instance's own namespaces and its `:deps` pull in the machines it uses; on
+first run those resolve into `~/.m2`/`~/.gitlibs`. `init.clj` wires the
 instance — provisions identities, delivers accesses, builds the machines, and
-runs the loop.
+registers the recurring processes to run (via `zeno.loop/every`).
 
 The flake's `zeno`/`default` app composes the classpath at launch: zeno core as
-a `:local/root` self **plus** the config project at `~/.zeno` as a
+a `:local/root` self **plus** the config project at `$ZENO_HOME` as a
 `:local/root`. That is why `init.clj` can `require` both zeno's namespaces and
 the config's own — everything is on one classpath before `zeno.main` runs.
 `zeno.main` then resolves the config dir (`$ZENO_HOME`, else `~/.zeno`), sets the
@@ -91,6 +92,20 @@ working directory, and `load-file`s `<home>/init.clj`.
 Config lives on local disk and is read from there, so editing `init.clj` or a
 machine and re-running takes effect immediately — no push needed. Only changes to
 zeno core itself need a push (or a pinned git dep).
+
+**zeno always starts.** If the config is missing or `init.clj` throws, the error
+is reported and you still land in a working REPL rather than a failed boot. The
+default mode is that interactive REPL (with an nREPL server up alongside, so you
+can connect a client while you type); `--daemon` runs headless — no interactive
+REPL, just the nREPL server (its port written to `<home>/.nrepl-port`) staying
+up for you to connect to.
+
+**The engine owns the loop and the daemon, not the instance.**
+`zeno.loop/every` registers a recurring process; `zeno.loop/start!` runs a
+background daemon-thread scheduler that ticks them, supervised. `zeno.main` calls
+`start!` for you, so registered processes run in **both** interactive and
+`--daemon` modes. An `init.clj` only *declares* what to run — it never spawns
+threads or writes its own loop or daemon.
 
 ## Quick start
 

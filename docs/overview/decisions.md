@@ -266,33 +266,70 @@ hardening step, using the same `{:env :hosts}` declaration.
 
 ---
 
-## ADR-0016 — The config lives in `~/.zeno` and is loaded ELPA-style by a `nix run` launcher (Emacs model)
+## ADR-0016 — zeno is a runtime; the instance is a config it loads and runs
 
 **Context.** zeno started as a library an instance embedded in its own
 `deps.edn`. But every instance repeated the same wiring — compose a classpath,
 find the entrypoint, run it — and there was no single "run my instance" command.
-The mental model that fits is Emacs: an executable that, on launch, loads a
-user config from a well-known directory.
+The model that fits is the ordinary one: a runtime that, on launch, loads a
+program from a well-known place — the way a shell sources your rc or a browser
+loads your profile.
 
-**Decision.** zeno is also a runnable launcher. `nix run
-github:reflection-dev/zeno` loads a config from `$ZENO_HOME` (default `~/.zeno`),
-the way emacs loads `~/.emacs.d/init.el`. The config is an ordinary `deps.edn`
-project with an `init.clj` entrypoint, published as `<name>.zeno` dotfiles; its
-`:paths` hold the instance's namespaces and its `:deps` pull in the machines it
-uses, resolved ELPA-style into `~/.m2`/`~/.gitlibs` on first run. `zeno.main`
-resolves the config dir, publishes it as the `zeno.home` system property, and
-`load-file`s `<home>/init.clj`.
+**Decision.** zeno is a **runtime**; your instance is a **config** it loads and
+runs. `nix run github:reflection-dev/zeno` loads a config from `$ZENO_HOME`
+(default `~/.zeno`). The config is an ordinary `deps.edn` project with an
+`init.clj` entrypoint, published like dotfiles as `<name>.zeno`; its `:paths`
+hold the instance's namespaces and its `:deps` pull in the machines (reusable
+workflow packages) it uses, resolved into `~/.m2`/`~/.gitlibs` on first run.
+`zeno.main` resolves the config dir, publishes it as the `zeno.home` system
+property, and `load-file`s `<home>/init.clj`.
 
 **Why.** It gives instances one command to run and a conventional home, without
 the core learning any instance detail (ADR-0002 holds — the config is data and
-code the launcher loads, not something the core names). Local-disk config means
+code the runtime loads, not something the core names). Local-disk config means
 editing `init.clj` or a machine and re-running takes effect immediately; only
 zeno-core changes need a push or a pinned git dep.
 
 **Consequences.** The classpath is composed **at launch** by the flake app —
-zeno core as a `:local/root` self plus the config project at `~/.zeno` as a
+zeno core as a `:local/root` self plus the config project at `$ZENO_HOME` as a
 `:local/root`, so `init.clj` can `require` both zeno's namespaces and the
 config's own before `zeno.main` runs. This is deliberately not runtime
 `add-libs`, which is REPL-only and unsuited to composing an application classpath
 at startup. zeno keeps its library face too: a project may still embed the core
 directly via `deps.edn`.
+
+---
+
+## ADR-0017 — The engine owns the loop and daemon; zeno always starts in a REPL
+
+**Context.** With the runtime/config split (ADR-0016), each instance also had to
+stand up its own run loop and background thread, and a config that failed to load
+would leave nothing running. Both are the same plumbing every instance repeats,
+and a config error that refuses to boot is the worst time to lose a REPL.
+
+**Decision.** The engine owns the loop and the daemon, not the instance.
+`zeno.loop/every` registers a recurring process (name, interval, zero-arg fn);
+`zeno.loop/start!` runs a background daemon-thread scheduler that ticks the due
+processes, supervised. `zeno.main` calls `start!`, so registered processes run in
+**both** interactive and `--daemon` modes; an `init.clj` only calls `every` to
+declare what to run. zeno also **always starts**: a missing config or a throwing
+`init.clj` is reported and you still land in a working REPL. The default mode is
+that interactive REPL (with an nREPL server up alongside so a client can connect
+while you type); `--daemon` runs headless — no interactive REPL, just the nREPL
+server (port written to `<home>/.nrepl-port`) staying up to connect to.
+
+**Why.** Owning the scheduler in the engine keeps instances declarative — they
+state what to run, never how to run it — and keeps supervision in one auditable
+place (a throwing process is logged and the others keep going, mirroring the step
+loop's isolation). Always coming up in a REPL means a broken config is
+debuggable live instead of a failed boot, which is exactly when you need the
+image up.
+
+**Consequences.** Instances must not spawn their own loop threads or daemons;
+they register processes and let the engine tick them. The core still names no
+role (ADR-0002) — `every` takes an opaque fn. Because the scheduler is a daemon
+thread, it does not by itself keep the JVM alive; `--daemon` parks on a promise
+and the interactive REPL holds the process open. This is not the multi-loop
+scheduler ADR-0001 rules out: it runs one instance's recurring processes on one
+daemon thread inside one process, not a routing bus coordinating many autonomous
+loops or instances.
