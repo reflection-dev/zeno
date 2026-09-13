@@ -11,7 +11,8 @@
      --daemon    no interactive REPL; start an nREPL server and stay up so an
                  editor/client can connect later (like `emacs --daemon`)."
   (:require [clojure.java.io :as io]
-            [clojure.main :as main]))
+            [clojure.main :as main]
+            [zeno.loop :as zloop]))
 
 (defn config-home
   "The config directory: $ZENO_HOME, else ~/.zeno."
@@ -61,6 +62,7 @@
   (let [daemon? (boolean (some #{"--daemon" "-d"} args))
         home    (config-home)]
     (load-config! home)
+    (zloop/start!)                          ; run instance-registered processes (both modes)
     (if daemon?
       (do (start-nrepl! home)
           (println "zeno: daemon up — connect via nREPL; Ctrl-C to stop")
