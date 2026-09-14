@@ -260,9 +260,9 @@ enters its box.
 prompt-injected body cannot exfiltrate what was never put in it. Resolution is
 instance policy (which store); forwarding is the core mechanism.
 
-**Consequences.** Values pass as plain env today; network-bound secrets (msb
-`--secret-conf`, delivered only toward allowed hosts, never on VM disk) are the
-hardening step, using the same `{:env :hosts}` declaration.
+**Consequences.** Plain env was the first cut; **network-bound delivery is now
+shipped** (ADR-0018) — the same `{:env :hosts}` declaration, but the guest holds
+only a placeholder and the real value reaches only the secret's host.
 
 ---
 
@@ -333,3 +333,37 @@ and the interactive REPL holds the process open. This is not the multi-loop
 scheduler ADR-0001 rules out: it runs one instance's recurring processes on one
 daemon thread inside one process, not a routing bus coordinating many autonomous
 loops or instances.
+
+---
+
+## ADR-0018 — Network-bound secrets and egress are shipped; encoding-aware injection lets native tools use them
+
+**Context.** ADR-0015 forwarded secrets as plain env and named network-bound
+delivery a future hardening step. But a sandboxed body that reads untrusted input
+(a post, a fetched page) and reaches the open web can be prompt-injected into
+exfiltrating a plain secret, so the hardening is required, not optional.
+
+**Decision.** `zeno.sandbox/run` renders msb's security surface directly. Each
+declared secret is delivered network-bound (`--secret ENV@HOST`): the guest env
+holds only an `$MSB_<ENV>` placeholder; msb reads the real value from the
+launcher env and releases it only toward the secret's allowed host(s), never into
+the guest config, argv, or VM disk. Egress is deny-by-default with a host
+allowlist (`--net-default-egress deny` + `--net-rule allow@host`), or a broad
+profile (`--net public`) when the agent must read arbitrary pages — either way a
+bound secret still reaches only its host.
+
+**Why — the non-obvious part.** msb's injection is *encoding-aware*: it substitutes
+the real value even after a tool has encoded the placeholder — git's HTTP Basic
+auth base64s `x-access-token:$MSB_GH_TOKEN` and msb still lands the real token. So
+a **standard `git push` works with a network-bound token**, no per-tool mediation.
+The rule that falls out: a secret that *appears in the request* (raw bearer or
+encoded) is network-bound and the agent uses its native tools; a secret *consumed
+purely locally* (an HMAC/SigV4 signature, an ssh key) never appears in a request
+and would need a mediated capability instead.
+
+**Consequences.** A sandboxed agent can be fully universal — native tools, broad
+egress — and still hold no real secret: the guest carries placeholders, so a
+prompt-injection has nothing to exfiltrate and broad egress can't leak a bound
+token. git over the msb-intercepted host needs the guest to trust the interception
+CA (`GIT_SSL_CAINFO=/.msb/tls/ca.pem`; node/omp already do via
+`NODE_EXTRA_CA_CERTS`). Supersedes ADR-0015's "plain env today / hardening later".

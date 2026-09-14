@@ -78,6 +78,14 @@ volume, not the body. `run` is the generic primitive (any argv, optional stdin);
 `omp` wraps the coding agent (task piped in, headless, answer parsed from its
 JSON stream). msb is the backend today; a Kubernetes-pod backend lands later.
 
+Secrets a body needs are delivered **network-bound**: the guest env holds only an
+`$MSB_<ENV>` placeholder, and msb releases the real value only toward the secret's
+allowed host — even when a tool has base64-encoded it (git's Basic auth), so a
+normal `git push` works with a token that never lands in the box. Egress is
+deny-by-default with a host allowlist (or a broad profile for agents that must read
+arbitrary pages); a bound secret still reaches only its host, so broad egress
+can't leak it (see ADR-0018).
+
 ### `zeno.oci` — an agent image from a Clojure spec
 
 Turns a Clojure `{:packages :env :cmd :workdir}` spec into an OCI image, using
