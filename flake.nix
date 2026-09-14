@@ -24,17 +24,27 @@
             CFG="$ZENO_HOME"
             if [ -z "$CFG" ]; then CFG="$HOME/.zeno"; fi
 
-            # Secrets. By default the launcher loads the instance's secretspec
-            # profile into the env before starting, so the instance reads its
-            # secrets from the environment (like ~/.emacs.d relying on the ambient
-            # env). Opt out with --no-secretspec or ZENO_SECRETSPEC=0; an instance
-            # with no secretspec.toml at $ZENO_HOME just runs raw. zeno itself never
-            # names a store - this is only the launcher priming the env.
+            # Secrets. The launcher loads the instance's secretspec profile into
+            # the env before starting, so the instance reads its secrets from the
+            # environment (like ~/.emacs.d relying on the ambient env). Opt out
+            # with --no-secretspec or ZENO_SECRETSPEC=0; an instance with no
+            # secretspec.toml at $ZENO_HOME just runs raw. zeno itself never names
+            # a store - this is only the launcher priming the env.
+            #
+            # Backend: if $ZENO_HOME/.env exists, secretspec reads secrets from
+            # that file (dotenv provider) - any binary reads a file, no macOS
+            # keychain is touched, so a headless/SSH/tmux launch never stalls on a
+            # keychain trust prompt. Otherwise the default provider (keyring) is
+            # used. Either way secrets are still validated against secretspec.toml.
             if [ "$1" = "--no-secretspec" ]; then shift; ZENO_SECRETSPEC=0; fi
             if [ -z "$ZENO_UNDER_SECRETSPEC" ] && [ "$ZENO_SECRETSPEC" != "0" ] && [ -f "$CFG/secretspec.toml" ]; then
               ZENO_UNDER_SECRETSPEC=1; export ZENO_UNDER_SECRETSPEC
               cd "$CFG" || exit 1
-              exec secretspec run --reason zeno -- "$0" "$@"
+              if [ -f "$CFG/.env" ]; then
+                exec secretspec run --provider dotenv --reason zeno -- "$0" "$@"
+              else
+                exec secretspec run --reason zeno -- "$0" "$@"
+              fi
             fi
 
             DEPS="{:deps {io.github.reflection-dev/zeno {:local/root \"${self}\"} nrepl/nrepl {:mvn/version \"1.3.1\"} zeno/config {:local/root \"$CFG\"}}}"
