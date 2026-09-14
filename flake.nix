@@ -13,7 +13,7 @@
 
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
-          packages = [ pkgs.clojure pkgs.jdk pkgs.git pkgs.secretspec pkgs.rlwrap ];
+          packages = [ pkgs.clojure pkgs.jdk pkgs.rlwrap ];
         };
       });
 
