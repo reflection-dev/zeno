@@ -41,11 +41,16 @@
 (defn- run-due! []
   (let [now (System/currentTimeMillis)]
     (doseq [[nm {:keys [interval-ms run next-at]}] @processes]
-      (when (>= now next-at)
+      (when (and (ifn? run) (number? interval-ms) (number? next-at) (>= now next-at))
         (try (run)
              (catch Throwable t
                (println (str "!! zeno process " nm " error: " (.getMessage t)))))
-        (swap! processes update nm assoc :next-at (+ (System/currentTimeMillis) interval-ms))))))
+        ;; re-schedule only if still registered, so a concurrent `cancel` can't be
+        ;; resurrected as a partial (:run-less) zombie that later crashes the loop
+        (swap! processes (fn [ps]
+                           (if (contains? ps nm)
+                             (update ps nm assoc :next-at (+ (System/currentTimeMillis) interval-ms))
+                             ps)))))))
 
 (defn start!
   "Start the background scheduler (a daemon thread) that runs the `every`
