@@ -32,6 +32,23 @@
 (defn- env-args [env]
   (mapcat (fn [[k v]] ["-e" (str (if (keyword? k) (clojure.core/name k) k) "=" v)]) env))
 
+(defn- ca-wrap
+  "Prepend a CA-trust prelude to argv. msb network-binds secrets by terminating
+   TLS with its own per-sandbox CA at /.msb/tls/ca.pem, which the image's public
+   SSL_CERT_FILE/GIT_SSL_CAINFO bundle does not trust. Concatenate the two into
+   one bundle and repoint the standard TLS env vars at it, so both network-bound
+   (msb CA) and direct-egress (public roots) HTTPS verify. No-op when either the
+   msb CA or the base bundle is absent."
+  [argv]
+  (into ["/bin/sh" "-c"
+         (str "if [ -f /.msb/tls/ca.pem ] && [ -n \"$SSL_CERT_FILE\" ]; then "
+              "cat \"$SSL_CERT_FILE\" /.msb/tls/ca.pem > /tmp/zeno-ca.crt 2>/dev/null && "
+              "export SSL_CERT_FILE=/tmp/zeno-ca.crt GIT_SSL_CAINFO=/tmp/zeno-ca.crt "
+              "REQUESTS_CA_BUNDLE=/tmp/zeno-ca.crt CURL_CA_BUNDLE=/tmp/zeno-ca.crt; fi; "
+              "exec \"$@\"")
+         "zeno-ca"]
+        argv))
+
 (defn run
   "Launch one ephemeral sandbox, run argv (optionally feeding :in on stdin),
    block until it exits (or --timeout), and return {:exit :out :err}.
@@ -72,7 +89,7 @@
                        (when cpus ["-c" (str cpus)])
                        (when memory ["-m" (str memory)])
                        [image "--"]
-                       argv)
+                       (ca-wrap argv))
         proc-env (when (seq secret-env)
                    (merge (into {} (System/getenv)) secret-env))]
     (apply sh/sh (concat args
