@@ -3,7 +3,12 @@
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  outputs = { self, nixpkgs }:
+  # secretspec pinned to a fixed nixpkgs rev: its binary (hence the macOS keychain
+  # trust of already-stored secrets) stays byte-identical across nixpkgs bumps, so
+  # updating zeno never invalidates secrets. Bump this rev only deliberately.
+  inputs.secretspec-pkgs.url = "github:NixOS/nixpkgs/8ce4ef6cb6f871616146b9fe26d2a5ae594e94fe";
+
+  outputs = { self, nixpkgs, secretspec-pkgs }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
@@ -17,10 +22,12 @@
         };
       });
 
-      apps = forAll (pkgs:
+      apps = nixpkgs.lib.genAttrs systems (system:
         let
+          pkgs = nixpkgs.legacyPackages.${system};
+          secretspec = secretspec-pkgs.legacyPackages.${system}.secretspec;
           zeno = pkgs.writeShellScriptBin "zeno" ''
-            export PATH=${pkgs.jdk}/bin:${pkgs.clojure}/bin:${pkgs.secretspec}/bin:$PATH
+            export PATH=${pkgs.jdk}/bin:${pkgs.clojure}/bin:${secretspec}/bin:$PATH
             CFG="$ZENO_HOME"
             if [ -z "$CFG" ]; then CFG="$HOME/.zeno"; fi
 
